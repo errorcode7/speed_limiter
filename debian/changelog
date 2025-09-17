@@ -1,0 +1,5 @@
+speed-limiter (0.1.0) unstable; urgency=medium
+
+  * Initial release with CO-RE BPF and postinst build.
+
+ -- Speed Limiter Maintainer <maintainer@example.com>  Thu, 11 Sep 2025 16:30:00 +0000
