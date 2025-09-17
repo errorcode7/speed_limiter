@@ -28,17 +28,11 @@ unsigned long long get_cgroup_id(const char *cgroup_path) {
     return (unsigned long long)st.st_ino;
 }
 
-/* 生成规则目录名：bucket_<bytes>_rate_<bps> */
-int make_rule_dirname(char *buf, size_t bufsize, unsigned long long bucket, unsigned long long rate)
-{
-	return snprintf(buf, bufsize, "bucket_%llu_rate_%llu", bucket, rate);
-}
-
 /* 检查 cgroup 是否为空 */
 int is_cgroup_empty(const char *cgroup_path)
 {
 	char procs_path[PATH_MAX];
-	snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs", cgroup_path);
+	SAFE_PATH_JOIN(procs_path, cgroup_path, "cgroup.procs");
 	FILE *f = fopen(procs_path, "readdir");
 	/* 简化：通过读取第一行判断是否为空 */
 	if (!f) return -1;
@@ -55,17 +49,31 @@ int do_move_pid(pid_t pid, const char *cgroup_path)
 		fprintf(stderr, "--move-pid 需要 --pid 和 --cgroup-path\n");
 		return 1;
 	}
-	char procs_path[PATH_MAX];
-	snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs", cgroup_path);
-	FILE *f = fopen(procs_path, "w");
-	if (!f) {
-		fprintf(stderr, "打开 %s 失败: %s\n", procs_path, strerror(errno));
+
+	/* 在迁移前保存该 PID 的原始 cgroup（若尚未记录） */
+	char orig_path[PATH_MAX];
+	unsigned long long orig_st = 0ULL;
+	if (load_pid_original_cgroup(pid, NULL, 0, NULL) != 0) {
+		/* 无记录才尝试读取并保存 */
+		if (read_proc_cgroup_v2_path(pid, orig_path, sizeof(orig_path)) == 0 &&
+			read_proc_starttime(pid, &orig_st) == 0) {
+			/* 记录：若记录已存在则忽略 */
+			int save_ret = save_pid_original_cgroup(pid, orig_path, orig_st);
+			if (save_ret != 0) {
+				fprintf(stderr, "警告: 保存进程 %d 的原始 cgroup 记录失败 (路径=%s, 启动时间=%llu)\n",
+				        pid, orig_path, (unsigned long long)orig_st);
+			}
+		} else {
+			fprintf(stderr, "警告: 无法读取进程 %d 的 cgroup 信息或启动时间\n", pid);
+		}
+	}
+
+	if (move_pid_to_cgroup(pid, cgroup_path) == 0) {
+		printf("已将 PID %d 移入 %s\n", pid, cgroup_path);
+		return 0;
+	} else {
 		return 1;
 	}
-	fprintf(f, "%d", pid);
-	fclose(f);
-	printf("已将 PID %d 移入 %s\n", pid, cgroup_path);
-	return 0;
 }
 
 /* 创建 cgroup 目录 */

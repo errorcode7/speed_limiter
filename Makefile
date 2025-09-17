@@ -3,17 +3,17 @@ BPF_LLVM_STRIP ?= llvm-strip
 CC ?= gcc
 ## 目录结构
 INCDIR := src/include
-TOOLDIR := src/limiter
+LIMTITER_DIR := src/limiter
 BPFDIR := src/bpf
 BINDIR := bin
 TOOLSDIR := src/tool
 
 BPFOBJ := $(BINDIR)/limiter.bpf.o
-USEROBJ := $(BINDIR)/limiter
+LIMTITER_OBJ := $(BINDIR)/limiter
 
 # 源文件列表
-TOOL_SOURCES := $(TOOLDIR)/main.c $(TOOLDIR)/utils.c $(TOOLDIR)/cgroup.c $(TOOLDIR)/bpf.c $(TOOLDIR)/managed.c $(TOOLDIR)/cli.c
-TOOL_OBJECTS := $(TOOL_SOURCES:$(TOOLDIR)/%.c=$(BINDIR)/%.o)
+TOOL_SOURCES := $(LIMTITER_DIR)/main.c $(LIMTITER_DIR)/utils.c $(LIMTITER_DIR)/cgroup.c $(LIMTITER_DIR)/bpf.c $(LIMTITER_DIR)/managed.c $(LIMTITER_DIR)/cli.c
+TOOL_OBJECTS := $(TOOL_SOURCES:$(LIMTITER_DIR)/%.c=$(BINDIR)/%.o)
 
 CFLAGS := -O2 -g -Wall -fPIE
 PKG_CONFIG_PATH ?= /usr/lib64/pkgconfig
@@ -36,9 +36,9 @@ else
   ARCH_FLAG := -D__TARGET_ARCH_x86
 endif
 
-all: tool tools
+all: limiter bpf tools
 
-tool: $(USEROBJ)
+limiter: $(LIMTITER_OBJ)
 
 .PHONY: tools
 tools:
@@ -65,28 +65,31 @@ $(BPFOBJ): $(BPFDIR)/limiter.bpf.c $(INCDIR)/limiter.h $(BPFDIR)/vmlinux.h | $(B
 $(BPFDIR)/vmlinux.h:
 	@echo "提示: 请运行 make bpf（将自动生成 $(BPFDIR)/vmlinux.h）"
 
-$(USEROBJ): $(TOOL_OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(PKG_CFLAGS) -I$(INCDIR) -I$(TOOLDIR) $(TOOL_OBJECTS) -o $(USEROBJ) $(PKG_LIBS) -pie
+$(LIMTITER_OBJ): $(TOOL_OBJECTS) | $(BINDIR)
+	$(CC) $(CFLAGS) $(PKG_CFLAGS) -I$(INCDIR) -I$(LIMTITER_DIR) $(TOOL_OBJECTS) -o $(LIMTITER_OBJ) $(PKG_LIBS) -pie
 
-$(BINDIR)/%.o: $(TOOLDIR)/%.c | $(BINDIR)
-	$(CC) $(CFLAGS) $(PKG_CFLAGS) -I$(INCDIR) -I$(TOOLDIR) -c $< -o $@
+$(BINDIR)/%.o: $(LIMTITER_DIR)/%.c | $(BINDIR)
+	$(CC) $(CFLAGS) $(PKG_CFLAGS) -I$(INCDIR) -I$(LIMTITER_DIR) -c $< -o $@
 
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
 clean:
-	rm -f $(BPFOBJ) $(USEROBJ) $(TOOL_OBJECTS)
+	rm -f $(BPFOBJ) $(LIMTITER_OBJ) $(TOOL_OBJECTS)
 	$(MAKE) -C src/tool clean || true
 
 .PHONY: install
-install: $(USEROBJ)
+install: $(LIMTITER_OBJ)
 	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 0755 $(USEROBJ) $(DESTDIR)$(PREFIX)/bin/limiter
-	# 安装 BPF 源码与头文件
-	install -d $(DESTDIR)$(PREFIX)/share/speed_limiter
-	install -m 0644 $(BPFDIR)/limiter.bpf.c $(DESTDIR)$(PREFIX)/share/speed_limiter/limiter.bpf.c
-	install -m 0644 $(INCDIR)/limiter.h $(DESTDIR)$(PREFIX)/share/speed_limiter/limiter.h
-	install -m 0644 Makefile $(DESTDIR)$(PREFIX)/share/speed_limiter/Makefile.src
+	install -m 0755 $(LIMTITER_OBJ) $(DESTDIR)$(PREFIX)/bin/limiter
+	# 安装 BPF 对象
+	install -d $(DESTDIR)$(PREFIX)/lib/speed_limiter
+	install -m 0644 $(BPFOBJ) $(DESTDIR)$(PREFIX)/lib/speed_limiter/limiter.bpf.o
+	# 安装源码，保持原始目录结构
+	install -d $(DESTDIR)$(PREFIX)/share/speed_limiter/src/bpf
+	install -d $(DESTDIR)$(PREFIX)/share/speed_limiter/src/include
+	install -m 0644 $(BPFDIR)/limiter.bpf.c $(DESTDIR)$(PREFIX)/share/speed_limiter/src/bpf/limiter.bpf.c
+	install -m 0644 $(INCDIR)/limiter.h $(DESTDIR)$(PREFIX)/share/speed_limiter/src/include/limiter.h
 
 .PHONY: all clean
 

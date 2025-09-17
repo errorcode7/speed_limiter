@@ -4,21 +4,26 @@ set -e
 case "$1" in
     configure)
         PREFIX=/usr
-        SRC_DIR=$PREFIX/share/speed_limiter
+        SRC_DIR=$PREFIX/share/speed_limiter/src
         OUT_DIR=$PREFIX/lib/speed_limiter
         mkdir -p "$OUT_DIR"
-        # 若占位 vmlinux.h 存在，优先用 bpftool 生成真实文件覆盖
-        if command -v bpftool >/dev/null 2>&1; then
-            bpftool btf dump file /sys/kernel/btf/vmlinux format c > "$SRC_DIR/vmlinux.h" 2>/dev/null || true
-        fi
+
         # 生成 vmlinux.h（CO-RE）
         if command -v bpftool >/dev/null 2>&1; then
-            bpftool btf dump file /sys/kernel/btf/vmlinux format c > "$SRC_DIR/vmlinux.h" 2>/dev/null || true
+            echo "正在生成 vmlinux.h..."
+            if bpftool btf dump file /sys/kernel/btf/vmlinux format c > "$SRC_DIR/vmlinux.h" 2>&1; then
+                echo "vmlinux.h 生成成功"
+            else
+                echo "警告: vmlinux.h 生成失败，BPF 程序可能需要手动编译"
+            fi
+        else
+            echo "警告: 未找到 bpftool，无法生成 vmlinux.h"
         fi
         # try clang-18 fallback to clang
         CLANG=$(command -v clang-18 || true)
         [ -z "$CLANG" ] && CLANG=$(command -v clang || true)
         if [ -n "$CLANG" ]; then
+            echo "正在编译 BPF 程序..."
             # 根据当前架构选择 __TARGET_ARCH_*
             ARCH_FLAG="-D__TARGET_ARCH_x86"
             case "$(uname -m)" in
@@ -29,7 +34,13 @@ case "$1" in
                 *)
                     ARCH_FLAG="-D__TARGET_ARCH_x86" ;;
             esac
-            "$CLANG" -D__BPF_SIDE__ -g -O2 -target bpf $ARCH_FLAG -I"$SRC_DIR" -I"$PREFIX/include/bpf" -c "$SRC_DIR/limiter.bpf.c" -o "$OUT_DIR/limiter.bpf.o" || true
+            if "$CLANG" -g -O2 -target bpf $ARCH_FLAG -I"$SRC_DIR" -I"$PREFIX/include/bpf" -c "$SRC_DIR/bpf/limiter.bpf.c" -o "$OUT_DIR/limiter.bpf.o" 2>&1; then
+                echo "BPF 程序编译成功"
+            else
+                echo "警告: BPF 程序编译失败，可能需要手动编译"
+            fi
+        else
+            echo "警告: 未找到 clang，无法编译 BPF 程序"
         fi
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)

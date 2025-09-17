@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <limits.h>
+#include <libgen.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 
@@ -24,7 +26,7 @@ static int on_event(void *ctx, void *data, size_t len)
 {
     const struct prog_event *e = data;
     const char *direction;
-    
+
     // 根据 atype 确定方向
     switch (e->atype) {
         case 0: direction = "ingress"; break;  // BPF_CGROUP_INET_INGRESS
@@ -42,9 +44,9 @@ static int on_event(void *ctx, void *data, size_t len)
         case 12: direction = "recvmsg6"; break;   // BPF_CGROUP_UDP6_RECVMSG
         default: direction = "unknown"; break;
     }
-    
+
     if (e->type == 0) {
-        printf("SESSION: direction=%s cgroup_id=%llu ctx=0x%lx atype=%u\n", 
+        printf("SESSION: direction=%s cgroup_id=%llu ctx=0x%lx atype=%u\n",
                direction, e->cgroup_id, (unsigned long)e->ctx, e->atype);
     } else if (e->type == 1) {
         printf("  PROG: id=%u name=%.*s\n", e->prog_id, (int)sizeof(e->name), e->name);
@@ -63,7 +65,31 @@ int main(void)
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
-    obj = bpf_object__open_file("/home/u/git/speed_limiter/src/tool/trace_cgroup_progs.bpf.o", NULL);
+    /* 通过可执行文件所在目录定位 bin/ 下的 BPF 对象 */
+    char exe_path[PATH_MAX];
+    char exe_dir[PATH_MAX];
+    char bpf_obj_path[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (n < 0 || (size_t)n >= sizeof(exe_path)) {
+        fprintf(stderr, "resolve /proc/self/exe failed\n");
+        return 1;
+    }
+    exe_path[n] = '\0';
+    strncpy(exe_dir, exe_path, sizeof(exe_dir));
+
+    exe_dir[sizeof(exe_dir) - 1] = '\0';
+    char *dir = dirname(exe_dir);
+    if (!dir) {
+        fprintf(stderr, "dirname failed\n");
+        return 1;
+    }
+    int l = snprintf(bpf_obj_path, sizeof(bpf_obj_path), "%s/%s", dir, "trace_cgroup_progs.bpf.o");
+    if (l < 0 || (size_t)l >= sizeof(bpf_obj_path)) {
+        fprintf(stderr, "bpf obj path too long\n");
+        return 1;
+    }
+
+    obj = bpf_object__open_file(bpf_obj_path, NULL);
     if (!obj) { fprintf(stderr, "open bpf obj failed\n"); return 1; }
     if ((err = bpf_object__load(obj))) { fprintf(stderr, "load failed: %d\n", err); return 1; }
 

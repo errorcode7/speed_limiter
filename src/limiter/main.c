@@ -4,12 +4,13 @@
 
 int main(int argc, char **argv)
 {
-	/* 首先尝试便捷模式 */
+	/* 解析命令行参数 */
 	int ret = parse_convenient_args(argc, argv);
 	if (ret != -1) {
-		return ret; /* 便捷模式处理完成 */
+		return ret; /* 处理完成 */
 	}
-	
-	/* 如果不是便捷模式，则使用高级模式 */
-	return parse_advanced_args(argc, argv);
+
+	/* 如果没有匹配的命令，显示帮助信息 */
+	print_usage(stderr);
+	return 1;
 }

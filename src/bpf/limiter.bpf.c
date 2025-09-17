@@ -12,6 +12,35 @@
  * - eBPF 返回值：1 放行 (allow)，0 丢弃 (deny)。
  */
 #include <vmlinux.h>
+
+#ifndef __u8
+typedef unsigned char __u8;
+#endif
+#ifndef __u16
+typedef unsigned short __u16;
+#endif
+#ifndef __u32
+typedef unsigned int __u32;
+#endif
+#ifndef __u64
+typedef unsigned long long __u64;
+#endif
+#ifndef __s32
+typedef int __s32;
+#endif
+#ifndef __s64
+typedef long long __s64;
+#endif
+#ifndef __be16
+typedef __u16 __be16;
+#endif
+#ifndef __be32
+typedef __u32 __be32;
+#endif
+#ifndef __wsum
+typedef __u32 __wsum;
+#endif
+
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include "../include/limiter.h"
@@ -21,17 +50,17 @@ static __always_inline __u64 get_cgroup_id_from_skb(struct __sk_buff *skb)
 {
 	struct sock *sk;
 	struct cgroup *cgrp;
-	
+
 	/* 获取socket指针 */
 	sk = (struct sock *)BPF_CORE_READ(skb, sk);
 	if (!sk)
 		return 0;
-	
+
 	/* 获取cgroup指针 */
 	cgrp = BPF_CORE_READ(sk, sk_cgrp_data.cgroup);
 	if (!cgrp)
 		return 0;
-	
+
 	/* 获取cgroup ID */
 	return BPF_CORE_READ(cgrp, kn, id);
 }
@@ -66,7 +95,7 @@ TCP/UDP 协议处理 -> IP 路由 -> 邻居表 -> 网卡队列驱动 -> 网卡
          ^
          |
      TCP 重传计时器
-	
+
 */
 
 SEC("cgroup_skb/egress")
@@ -76,14 +105,15 @@ int limit_egress(struct __sk_buff *skb)
 	__u64 now = bpf_ktime_get_ns();
 	__u64 packet_len = skb->len;
 	/* 以 cgroup_id 作为限速维度 */
-	__u64 cgid = get_cgroup_id_from_skb(skb);
+	//__u64 cgid = get_cgroup_id_from_skb(skb);
+	__u64 cgid = bpf_get_current_cgroup_id();
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	u32 pid = (u32)(pid_tgid >> 32);  // 修正：获取线程组ID (tgid)
 	u32 tid = (u32)(pid_tgid);        // 获取线程ID (pid)
 	struct rate_limit_config *conf;
 	struct rate_limit_state *st;
 
-    bpf_printk("cgid=%llu tgid=%u tid=%u len=%u\n", cgid, pid, tid, skb->len);
+    bpf_printk("cgid=%llu pid=%u tid=%u len=%u\n", cgid, pid, tid, skb->len);
 	conf = bpf_map_lookup_elem(&rate_limit_config_map, &cgid);
 	st = bpf_map_lookup_elem(&rate_limit_state_map, &cgid);
 	if (!conf) {
